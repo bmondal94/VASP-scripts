@@ -1,0 +1,114 @@
+#!/bin/bash
+
+print_usage() {
+echo "HI, $USER!"
+echo ""
+echo "THIS SCRIPT IS TO UPDATE THE INCAR FILE AND SUBMIT NEW JOB."
+echo
+printf "Usage: $(basename "$0") [-h][-b][-o] <file-path>"
+echo
+echo "  -h:    help option"
+echo "  -b :    For cheking convergency of bandgap calculation using METAGGA=mbj"
+echo "  -o :    For cheking convergency of optimization calculation (Default: Single point non-bandgap calculation)"
+echo "  e.g. CheckFinishAll -b 'S5/N03.7/conf*'"
+echo
+exit
+}
+
+if [[ $# -eq 0 ]] ;then print_usage; fi
+
+file=$1
+while getopts ":b:o:h" options ; do
+    case $options in
+
+        b) 	file=${OPTARG}
+		check="bandgap" ;;
+
+        o) 	file=${OPTARG}
+		check='optimization' ;;
+
+	h) print_usage;;
+
+       \?) printExit E "Invalid option: -$OPTARG." ;;
+
+    esac
+done
+
+CheckFinishOptimization(){
+printf "++ Optimization Convergency check\n\n"
+a=()
+for j in $file;do
+	if [ -s "$j/OUTCAR" ] ; then
+		if [ $( grep -L 'reached required accuracy' $j/OUTCAR) ] ; then
+			printf "\e[38;5;213m-- Warning:\e[0m $j didn't finish.\n"
+			a+=" $j"
+		fi
+	else
+		printf "\e[38;5;1m** Error:\e[0m $j doesn't have OUTCAR or Empty.\n"
+		a+=" $j"
+	fi
+done
+echo " "
+echo "All files that didn't converge: "
+echo ${a[@]}
+echo " "
+}
+CheckFinishSinglePoint(){
+printf "++ Singlepoint Convergency check\n\n"
+for j in $file;do
+	if [ -s "$j/OUTCAR" ] ; then
+		nelmoutcar=$(awk '/NELM/ {print $3}' $j/OUTCAR | cut -d ';' -f1)
+		nelmoszicar=$(tail -n 2 $j/OSZICAR | head -n 1 | awk '{print $2}')
+		nelmdiff=$(bc<<<"$nelmoutcar-$nelmoszicar")
+		if [[ $nelmdiff -ne 0 ]];then
+			if [ $( grep -L 'Total CPU time used' $j/OUTCAR) ] ; then
+				printf "\e[38;5;213m-- Warning:\e[0m $j didn't finish.\n"
+			fi
+		else
+			printf "\e[38;5;213m-- Warning:\e[0m $j didn't finish properly. All the NELM step is consumed.\n"
+		fi
+	else
+		printf "\e[38;5;1m** Error:\e[0m $j doesn't have OUTCAR or Empty.\n"
+	fi
+done
+}
+CheckFinishBandgap(){
+printf "++ Bandgap Convergency check\n\n"
+for j in $file;do
+	#echo $j
+        if [ -s "$j/OUTCAR" ] ; then
+                if grep -q "METAGGA = MBJ" $j/OUTCAR; then
+			nelmoutcar=$(awk '/NELM/ {print $3}' $j/OUTCAR | cut -d ';' -f1)
+			nelmoszicar=$(tail -n 2 $j/OSZICAR | head -n 1 | awk '{print $2}')
+			nelmdiff=$(bc<<<"$nelmoutcar-$nelmoszicar")
+			if [[ $nelmdiff -ne 0 ]];then
+                		if [ $( grep -L 'Total CPU time used' $j/OUTCAR) ] ; then
+                        		printf "\e[38;5;213m-- Warning:\e[0m $j didn't finish.\n"
+				fi
+			else
+				printf "\e[38;5;213m-- Warning:\e[0m $j didn't finish properly. All the NELM step is consumed.\n"
+			fi
+		else
+                        printf "\e[38;5;91m++ Warning:\e[0m MBJ metagga is not used in $j.\n"
+                        i=$(awk '/ISIF/ {print $3}' $j/OUTCAR)
+                        if [[ $i -ne 0 ]]; then
+                                printf "\e[38;5;91m++ Warning:\e[0m ISIF in $j/OUTCAR = $i (not 0).\n"
+                        fi
+                fi
+        else
+                printf "\e[38;5;1m** Error:\e[0m $j doesn't have OUTCAR or Empty.\n"
+        fi
+done
+}
+
+
+echo
+echo "File supplied = $file" 
+echo
+if [[ "$check" == 'bandgap' ]]; then
+	CheckFinishBandgap
+elif [[ "$check" == 'optimization' ]]; then
+	CheckFinishOptimization
+else 
+	CheckFinishSinglePoint
+fi
