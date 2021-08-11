@@ -143,7 +143,7 @@ else:
     lattice = lattice_parameter(primitive_vector, crys_str=cst)
     #lattice = np.divide(np.array([a[0],b[1],c[2]]),S_factor)*(factor*2.0) # Use the projection of lattice vectors to get lattice constants
     print('(Conventional) Unit cell lattice constants: \n')
-    print('Lx\t=\t%7.5f\nLy\t=\t%7.5f\nLz\t=\t%7.5f'%(lattice[1],lattice[0],lattice[2]))
+    print('Lx\t=\t%7.5f\nLy\t=\t%7.5f\nLz\t=\t%7.5f'%(lattice[0],lattice[1],lattice[2]))
 #%%
 
 def unitcell_coordinate_zincblende(plane):
@@ -171,6 +171,8 @@ def unitcell_coordinate_zincblende(plane):
         natom = 4 # No. of Ga atom (= No. of As atom)
         new_lvec = np.array([[1,0,0],[0,1,0],[0,0,1]])
         lattice_rescale2 = np.array([1, 1, 1])
+    '''
+    # This part is wrong.
     if plane==111:
         unitcell = np.array([[0.000000000,         0.000000000,         0.000000000],
                              [0.333333343,         0.250000000,         0.083333336],
@@ -181,7 +183,7 @@ def unitcell_coordinate_zincblende(plane):
         natom = 3 # No. of Ga atom (= No. of As atom)
         new_lvec = np.array([[1,1,1],[-1,1,0],[-1,-1,2]])
         lattice_rescale2 = np.array([1, 1/3, 0.25])
-        
+    '''    
     lattice_rescale1 = norm(new_lvec,axis=1)
     
     return unitcell, natom, lattice_rescale1,lattice_rescale2
