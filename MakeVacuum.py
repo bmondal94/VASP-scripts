@@ -20,7 +20,7 @@ parser.add_argument('-UC', action='store_true', default=False, help='Is the cell
 parser.add_argument('-SC', action='store_true', default=False, help='Is the cell a supercell? True/False (default: False)')
 parser.add_argument('-SF', nargs='+', type=int, default=[6,6,6], help='Supercell dimensions (must be int) in a, b and c lattice vector directions respectively. (default: [6,6,6])')
 parser.add_argument('-CS', type=str, default='zincblende', help='Crystal Structure e.g. cubic, zincblende, strechedzincblende etc. (default: zincblende)')
-parser.add_argument('-plane', type=str, default=110, help='Lattice plane over which the vaccum will be. (default: 110)')
+parser.add_argument('-plane', type=str, default='110', help='Lattice plane over which the vaccum will be. (default: 110)')
 parser.add_argument('-layer', nargs='+', type=int, default=[1,1,1], help='How many layer you want to repeat? If single no. is given then repetation will be applied along z-axis only. If 2 no.s are given repetation will be in xy-plane. (default: no repetation)')
 parser.add_argument('-vac', type=float, default=0, help='Vacuum layer (along z-axis) length (default: 0). Default unit in same unit of lattice vector unit. Use -Lvac for unit in layer number.')
 parser.add_argument('-Lvac', action='store_true',default=False, help='To switch the vaccum length unit in no. of layer. It can be fraction.')
