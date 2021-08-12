@@ -7,9 +7,7 @@ Created on Thu Jul 29 13:05:27 2021
 """
 
 import numpy as np
-from scipy.spatial.transform import Rotation
 from numpy.linalg import norm
-from scipy import linalg
 import argparse
 import sys, os
 
@@ -36,7 +34,7 @@ def vec(a):
 def anglefn(v1, v2, acute=True):
 # v1 is your firsr vector
 # v2 is your second vector
-    angle = np.arccos(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)))
+    angle = np.arccos(np.dot(v1, v2) / (norm(v1) * norm(v2)))
     if (acute == True):
         return angle
     else:
