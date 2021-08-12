@@ -254,7 +254,7 @@ if __name__=="__main__":
         lattice_new_vec = np.zeros((3, 3))
         np.fill_diagonal(lattice_new_vec, lattice)
     
-        for J in range(lllp):
+        for J in range(len(repeat_layer)):
             unitcellGa_core = np.copy(posGa)
             unitcellAs_core = np.copy(posAs)
             for I in range(repeat_layer[J]-1):
