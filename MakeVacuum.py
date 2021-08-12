@@ -286,17 +286,17 @@ if __name__=="__main__":
         os.remove(nfname)
     except OSError:
         pass
-    fnamm = open(nfname,'a')
+    fnamm = open(nfname,'ab')
     
     ## Save output
     np.savetxt(fnamm,system,fmt='%s')
-    np.savetxt(fnamm,[1])
-    np.savetxt(fnamm,lattice_new_vec)
+    np.savetxt(fnamm,[1],fmt='%.14f')
+    np.savetxt(fnamm,lattice_new_vec,fmt='%.14f')
     np.savetxt(fnamm,sname,fmt='%s')
     np.savetxt(fnamm,[[nGa, nAs]],fmt='%d')
     np.savetxt(fnamm,['Cartesian'],fmt='%s')
-    np.savetxt(fnamm,posGa)
-    np.savetxt(fnamm,posAs)
+    np.savetxt(fnamm,posGa,fmt='%.14f')
+    np.savetxt(fnamm,posAs,fmt='%.14f')
     
     fnamm.close()
     print("* Finish: Please change the line 6 and 7 in the '%s' file if needed. For diamond structure add the 2 species in line 6 and 7. \n"%(nfname))
