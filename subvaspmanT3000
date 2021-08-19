@@ -1,0 +1,216 @@
+.TH SUBVASP 1 "13 NOVEMBER 2020" "subvasp 2.0" "User Commands"
+.SH NAME
+subvasp \- VASP submit script
+.SH SYNOPSIS
+.B subvasp
+.RB [ "\-haklyYz" ]
+.RB [ "\-j \fIJOB_ID" ]
+.RB [ "\-m \fISIZE" ]
+.RB [ "\-N \fINAME" ]
+.RB [ "\-q \fIRESOURCE_REQUEST_LIST" ]
+.RB [ "\-p \fICPUS" ]
+.RB [ "\-f \fIPPN" ]
+.RB [ "\-t \fITIME" ]
+.RB [ "\-T \fITIME(in sec)" ]
+.RB [ "\-v \fIVERSION" ]
+.RB [ "\-w \fIDIRECTORY_PATH" ]
+.B \-\-help
+.SH DESCRIPTION
+This manual page documents \fBsubvasp\fP, a submit script for VASP calculation with the input directory \fIDIRECTORY_PATH\fP.
+.SS Options
+.TP
+.B \-h
+Show help for subvasp script. You can also use \fB\-\-help\fR or only basename \fBsubvasp\fR without any arguments.
+.TP
+.B \-a
+Shows the applied defaults for the current user. All further processing will be stopped.
+.TP
+.B \-j \fIJOB_ID
+Specifies the \fIJOB_ID\fR of a job which must have finished before this job will start.
+.PP
+.RS
+As special value the last character \[oq]@\[cq] is accepted and replaced by its own jobname.
+This allows to submit several jobs which will be executed one after the other to make up a workflow,
+when all are submitted with the same name. In combination with \[oq]\fB\-N\fR\ @\[cq]
+it will make the workflow unqiue for each directory. To avoid that each job overwrites the output of
+a former job due to having the same name, the usage of \[oq]\fB\-j\fR\ @\[cq] will also change the mode of output
+operation from \[oq]overwrite\[cq] to \[oq]append\[cq].
+.PP
+Note for clusters running SGE: Any comma separated list of \fIJOB_ID\fR\[cq]s and/or
+\fINAME\fR\[cq]s can be specified for \fIJOB_ID\fR too. \fINAME\fR can in addition be made up of an
+expression to match several \fINAME\fR\[cq]s. For details see the man page of \fBsge_types\fR section
+\fBMATCHING TYPES\fR. If both arguments to options \fB\-j\fR and \fB\-N\fR end with an \[oq]@\[cq], only
+the part consisting of the assembled pathname instead of the full jobname will be used. This allows to
+specify \[oq]subvasp\ \fB\-j\fR\ \[dq]*@\[dq]\ \fB-N\fR\ part5_@\ ...\[cq] to match all steps in the same
+directory submitted before, while each has an unique prefix.
+.RE
+.TP
+.B \-k
+Keep the generated commandfile in ~/cmd. It will neither be
+deleted, nor submitted.
+.TP
+.B \-l
+List of vasp input files that will be copied to the scratch folder for qsub run. Choices are:
+.ad l
+.PP
+.RS
+.RS
+.PD 0
+.TP 12
+.B INCAR, POSCAR, KPOINTS, POTCAR \fP(default)
+.TP
+.B INCAR, POSCAR, KPOINTS, POTCAR, WAVECAR, CHGCAR \fP(will switch on if -l option is provided)
+.PD
+.RE
+.ad b
+.RE
+.TP
+.B \-m \fISIZE
+Request a queue with having at least \fISIZE\fR MB of memory per processor(/core) per node (pmem). PBS
+will not allow your job to submit if you use more momemory than allowed RAM/process in each node of specified
+queue. Subvasp script will also exit with error msg if memory managment is not satisfied.
+The default is user dependent and will showup with the option \fB\-a\fP.
+.TP
+.B \-N \fINAME
+By default the name of the calculation directory will be taken for the
+name of the job also. If this is not convenient (or possible as the name
+of the directory starts with a digit), you can force the job to get
+a chosen \fINAME\fR of your own.
+.PP
+.RS
+If this \fINAME\fR ends with a hash, it will be substituted with the
+default name. E.g. \[oq]\fB-N\fR run_#\[cq] for the input directory \[oq]test\[cq] will result in
+\[oq]run_test\[cq] as jobname.
+.PP
+If this \fINAME\fR ends with an \[oq]@\[cq], it will be substituted with the pathname
+to the input directory while disregarding up to three top level directories which
+are usually /home/$USER/\fISOME_DIRECTORY\fP.
+.RE
+.TP
+.B \-q \fIRESOURCE_REQUEST_LIST\fR
+Request special resources on the queueing system. You may specify more than
+one request using a list of the form: \fIRESOURCE_REQUEST_LIST\fR=\fIRESOURCE_REQUEST\fR[,\fIRESOURCE_REQUEST\fR]*
+.TP
+.B \-p \fICPUS
+If you specify the \fB-p\fR option, you can request a parallel execution of the job
+with more than one CPU, which is the default.
+.TP
+.B \-f \fI PPN
+If you specify the \fB-f\fR option, you can request a parallel execution of the job
+with more than one core (no. of process or core per node), which is the default.
+.TP
+.B \-t \fITIME
+Request a queue with a job time of \fITIME\fR hours. The value of \fITIME\fR can
+have the format [\fIHOURS\fR]:\fIMINUTES\fR for finer adjustment. As special value
+the case insensitive string \[oq]infinity\[cq] to request no time limit for this job
+is also supported.
+The default is user dependent and will showup with the option \fB\-a\fP.
+.TP
+.B \-T \fITIME
+If time needed for cleaning and copying back is not enough due to a lot of
+large files (e.g. WAVECAR, CHGCAR etc.) then use this option
+to allocate more time for copying. The value of \fITIME\fR can only be in sec.
+The default is 60 sec and will showup with the option \fB\-a\fP.
+.TP
+.B \-v \fIVERSION
+Specifies, what executable should be used for the VASP job. The
+available choices for \fIVERSION\fR are:
+.ad l
+.PP
+.RS
+.RS
+.PD 0
+.TP 12
+.B 5.4.4+
+VASP 5.4.4+ (default)
+.TP
+.B 5.4.4+-n
+VASP 5.4.4+ compiled with NCL option
+.TP
+.B 5.4.4+-g
+VASP 5.4.4+ compiled with \[*G]-point options (-DwNGXhalf, resp. -DwNGZhalf)
+.TP
+.B 5.4.4+c
+VASP 5.4.4+ Lattice vector constrained in x, y direction
+.TP
+.B 5.4.4+c-n
+VASP 5.4.4+ Lattice vector constrained in x, y direction compiled with NCL option
+.TP
+.B 5.4.4+c-g
+VASP 5.4.4+ Lattice vector constrained in x, y direction compiled with \[*G]-point options (-DwNGXhalf, resp. -DwNGZhalf)
+.PD
+.RE
+.ad b
+.PP
+These are self-compiled versions, compiled with the Intel Fortran Compiler.
+.PP
+.char \[el] \f[S]\N'188'\fP
+.PP
+The above specified built-in default version of the application might be overridden by setting the environment variable \fBVASP_VERSION\fR to any of the listed values. The effective default will show up with the option \fB\-a\fP.
+.RE
+.TP
+.B \-w \fIDIRECTORY_PATH
+By default the directory, for which the calculation will be made, is
+the current working directory. By using this switch you can submit any
+directory to the job. So the default behavior could be written like:
+\[oq]\fB-w\fP .\[cq].
+.TP
+.B \-y
+The output of the submission script is redirected to \[oq]stderr\[cq] and the only output
+on \[oq]stdout\[cq] is the \fIJOB_ID\fR of the submitted job (unless used together with
+the \fB\-Y\fR option). This allows easy assignment of the \fIJOB_ID\fR to a variable when
+scripting the submission script. If \fB\-Y\fR is given too, \fIJOB_ID\fR and \fINAME\fR
+will be output to \[oq]stdout\[cq] in this order, separated by a space character.
+.TP
+.B \-Y
+The output of the submission script is redirected to \[oq]stderr\[cq] and the only output
+on \[oq]stdout\[cq] is the \fINAME\fR of the submitted job (unless used together with
+the \fB\-y\fR option). This allows easy assignment of the \fINAME\fR to a variable when
+scripting the submission script. If \fB\-y\fR is given too, \fIJOB_ID\fR and \fINAME\fR
+will be output to \[oq]stdout\[cq] in this order, separated by a space character.
+.TP
+.B \-z
+Shows the processed option file(s) for the current user (see
+.SM
+.B FILES
+below). All further processing will be stopped.
+.TP
+.B \-\-help
+Show help for subvasp script. You can also use \fB\-h\fR or only basename \fBsubvasp\fR without any arguments.
+.SH FILES
+.TP
+\fI$cwd/.subrc\fR
+cwd default option file
+.TP
+\fI$HOME/.subrc\fR
+user default option file
+.TP
+\fI<script_root>/subrc\fR
+common default option file
+.PP
+Each line in these files may have options for the used submit scripts. First
+in each line the name of the targeted submit script has to be specified, which
+is the scriptname without the prefix \[oq]sub\[cq], hence a line might read like:
+.PP
+.RS
+vasp -m 450 -N ExtraName -h
+.RE
+.PP
+If an option line occurs multiple times for one type of submit script, then all
+are read and processed one after the other.
+.PP
+All or some of the above mentioned option files may exist and are processed in
+the reverse order.
+.PP
+Options given on the command line are processed last and may overwrite any of the
+options in the option file.
+.SH AUTHOR
+Originally was written by Reuti <reuti@staff.uni-marburg.de>. Updated by --------.
+.SH REPORTING BUGS
+Report bugs to <------@----.uni-leipzig.de>.
+.SH COPYRIGHT
+Copyright \[co] 2020 Leipzig University Chemistry.
+.br
+This  is  free  software.   You  may  redistribute  copies  of  it  under  the  terms  of  the GNU General Public License
+<http://www.gnu.org/licenses/gpl.html>.  There is NO WARRANTY, to the extent permitted by law.
+.SH "SEE ALSO"

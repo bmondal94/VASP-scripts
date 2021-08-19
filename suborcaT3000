@@ -1,0 +1,723 @@
+#!/bin/bash
+#       subvasp -  VASP submit script
+
+PGM_NAME="suborca"
+PGM_VERSION="1."
+
+if [ -L "$0" ]; then 
+    SCRIPT_ROOT=$(dirname $(readlink -f "$0"))
+else
+    SCRIPT_ROOT=$(dirname "$0")
+fi
+OUTPUT_OPERATION=">"
+
+#
+# Setup the default values for the user options.
+#
+
+time_p="24"
+memory_default="1024"
+cpunr="16"
+pernode=16
+resources='ib16_64g'  # To check abailable ques: qstat -q
+version_default=${ORCA_VERSION:-4.2.1}
+calculation_directory="."
+cleantime=60 #in sec
+#
+# Routine for the display of the usage description of the
+# command.
+#
+
+function usage
+{
+    cat <<-EOF
+$PGM_NAME $PGM_VERSION
+Usage: $PGM_NAME [-ahHkKyYz] [-j JOB-ID] [-m SIZE] [-N NAME] [-q RESOURCE-REQUEST-LIST]
+[-p CPUS] [-f PPN] [-t TIME] [-T TIME(in sec)] [-v VERSION] [-w DIRECTORY_PATH] --help
+
+-K: If you want to keep *.tmp files when the program gets killed during runtime. (Default is deleting *.tmp before post 
+    calculation processing.) Then it is recommended to increase the -T to 600 sec or more. Default -T 60 sec might not 
+    be enough for a lot of large files.
+-T: To allocate more time for post calculation cleaning and copying back. Useful when there are a lot of large files.
+    Default 60 sec might not be enough.
+
+See \`man /home/bmondal/script/${PGM_NAME}man' for more information.
+
+EOF
+
+    exit 2
+}
+
+function display_defaults
+{
+    cat <<-EOF
+Defaults: -m $memory_default
+          -t $time_p (parallel)
+	  -T $cleantime (in sec)
+          -v $version_default
+          -q $resources
+          -p $cpunr
+          -f $pernode
+
+EOF
+}
+
+#
+# If there is an unrecoverable error: display a message and exit.
+#
+
+function printExit
+{
+    case $1 in
+        [iI]) echo INFO: "$2" ;;
+        [wW]) echo WARNING: "$2" ;;
+        [eE]) echo ERROR: "$2" ; exit 1 ;;
+           *) echo "$1" ;;
+    esac
+}
+
+#
+# Test, whether we can access the given file for input.
+#
+
+function testFile
+{
+    if [ ! -r "$1" -o ! -f "$1" ] ; then
+        if [ "$2" = "return" ] ; then
+            returncode="-1"
+        else
+            printExit E "Inputfile \"$1\" was not found."
+        fi
+    else
+        returncode="0"
+    fi
+
+    return "$returncode"
+}
+
+#
+# Test, whether we can access the given file for input.
+#
+
+function testDirectory
+{
+    if [ ! -r "$1" -o ! -d "$1" ] ; then
+        if [ "$2" = "return" ] ; then
+            returncode="-1"
+        else
+            printExit E "Inputdirectory \"$1\" was not found."
+        fi
+    else
+        returncode="0"
+    fi
+
+    return "$returncode"
+}
+
+#
+# Special options which will quit the script.
+#
+
+function display_only()
+{
+    OPTIND=1
+    while getopts :af:Hj:kKm:N:q:p:t:T:v:w:yYz options ; do
+        case $options in
+
+            a) CMDOPT_A="1" ;;
+
+            z) CMDOPT_Z="1" ;;
+
+           \?) ;;
+
+        esac
+    done
+}
+
+#
+# Process options from the command line or the rc files.
+#
+
+function settings()
+{
+    OPTIND=1
+
+    while getopts :aHj:kKf:m:N:q:p:t:T:v:w:yYz options ; do
+        case $options in
+
+            a) ;;
+
+            H) CMDOPT_H="1" ;;
+
+            j) CMDOPT_J="1"
+               jobid=$OPTARG
+               if [ "${jobid:${#jobid}-1:1}" = "@" ]; then
+                   OUTPUT_OPERATION=">>"
+               fi ;;
+
+            k) CMDOPT_K="1" ;;
+
+            K) CMDOPT_KK="1" ;;
+
+            m) mmemory=$OPTARG ;;
+
+            N) CMDOPT_N="1"
+               jobtitle=$OPTARG ;;
+
+            q) resources="$OPTARG" ;;
+
+            p) CMDOPT_P="1"
+               cpunr=$OPTARG ;;
+
+	    f) pernode=$OPTARG ;;
+
+            t) CMDOPT_T="1"
+               time=$OPTARG ;;
+
+            T) CMDOPT_T="1"
+               cleantime=$OPTARG ;;
+
+            v) version=$OPTARG ;;
+
+            w) calculation_directory=$OPTARG ;;
+
+            y) CMDOPT_Y="1" ;;
+
+            Y) CMDOPT_YY="1" ;;
+
+            z) ;;
+
+           \?) printExit E "Invalid option: -$OPTARG." ;;
+
+        esac
+    done
+
+    if [ -n "$CMDOPT_Y" -o -n "$CMDOPT_YY" ]; then
+       exec 4>&1
+       exec >&2
+    fi
+}
+
+#
+# Test, whether there are any user inputs. Else display the usage
+# description of the command.
+#
+
+if [ -z "$1" ] || [ "$1" = '-h' ] || [ "$1" = '--help' ] ; then
+       	usage
+fi
+#
+# Test special options, which will quit the processing.
+#
+
+display_only "$@"
+
+#
+# Test the three possible default files, before the command line
+# is tested for the various options.
+#
+
+if [ -n "$CMDOPT_A" -o -n "$CMDOPT_Z" ]; then
+    echo "$PGM_NAME $PGM_VERSION"
+fi
+if [ -n "$CMDOPT_A" ]; then
+    display_defaults
+fi
+if [ -n "$CMDOPT_Z" ]; then
+    echo "Processed option file(s):"
+fi
+
+program=${0##*/sub}
+declare -a DEFAULT_FILE_LOCATION
+DEFAULT_FILE_LOCATION[1]=$SCRIPT_ROOT/subrc
+DEFAULT_FILE_LOCATION[2]=~/.subrc
+if [ `pwd` != ~ ]; then
+    DEFAULT_FILE_LOCATION[3]=.subrc
+fi
+for DEFAULT_FILE in ${DEFAULT_FILE_LOCATION[@]}; do
+    if [ -f "$DEFAULT_FILE" -a -r "$DEFAULT_FILE" ]; then
+        PARAMETER=`sed -n -e "/^ *$program /s/$program *//p" $DEFAULT_FILE`
+        if [ -n "$PARAMETER" ]; then
+            if [ -n "$CMDOPT_Z" ]; then
+               echo "$DEFAULT_FILE: $PARAMETER"
+            fi
+            settings $PARAMETER
+        fi
+    fi
+done
+
+#
+# Special case for -a and -z option.
+#
+
+if [ -n "$CMDOPT_Z" ]; then
+    echo
+fi
+if [ -n "$CMDOPT_A" -o -n "$CMDOPT_Z" ]; then
+    exit 2
+fi
+
+#
+# Now process the command line.
+#
+
+settings "$@"
+
+#
+# Shift the arguments up to the input without the option prefix "-".
+# This should be the filename.
+#
+
+shift $((OPTIND-1))
+
+#
+# Transfer the default values.
+#
+
+if [ -z "$mmemory" ]; then
+    mmemory="$memory_default"
+fi
+
+#
+# Test the option string for spaces.
+#
+
+if [ "$resources" != "${resources// /}" ]; then
+    printExit E "The option string supplied to -q must not contain any spaces."
+fi
+
+qmltmp=${resources#*_}
+ppnltmp=${resources%_*}
+pernodelimit=${ppnltmp: -2}
+queue_memory_limit=$(( ${qmltmp%g*} / pernodelimit * 1024 )) # GB to MB conversion
+
+if [[ $mmemory -gt $queue_memory_limit ]];then
+	printf "\n\e[38;5;9;4m++ memory warning:\e[0m Hi $USER, you are asking for more memory/core than allowed."
+	printf "\nPlease fix the memory. Else I can also set to maximum allowed memory possible in this queue for you.\n"
+	printf "\nQueue: $resources"
+	printf "\nAllowed memory: $queue_memory_limit MB; You requested: $mmemory MB per core in each node.\n\n"
+	echo "-- Do you want me to reset and continue? If yes press y/Y/yes/YES else press ENTER to quite."
+	read contin
+	if [[ ${contin,, } = y* ]]; then
+		mmemory=$queue_memory_limit
+	else
+		exit
+	fi
+fi
+
+#
+# Adjust the number of used cores.
+#
+if [[ $pernode -gt $pernodelimit ]]; then
+	printf "\n\e[38;5;9;4m++ ppn warning:\e[0m "
+	echo "Hi $(whoami), you have supplied more ppn ($pernode) than allowed ($pernodelimit) in this queue."
+	if [[ $cpunr -gt $pernodelimit ]]; then
+		pernode=$pernodelimit
+	else 
+		pernode=$cpunr
+	fi
+	echo "So, ppn has been adjusted to its maximum limit of this queue (or to reqiured CPUnr): $pernode"
+fi
+if [[ $cpunr -lt $pernodelimit ]]; then
+	pernode=$cpunr
+elif [[ $pernode -eq $pernodelimit ]]; then
+       :	
+else
+	printf "\n\e[38;5;9;4m++ ppn-cpunr mismatch warning:\e[0m "
+	echo "Hi $(whoami), you have supplied less ppn ($pernode) than allowed ($pernodelimit) in this queue."
+	echo "But your requested CPUnr is greater than requested ppn."
+	pernode=$pernodelimit
+	echo "So, for better performance ppn has been adjusted to its maximum limit of this queue: $pernode"
+fi
+
+nnode=$((cpunr/pernode))
+exnode=$((nnode*pernode))
+if [[ $cpunr -gt $exnode ]]; then
+	printf "\n\e[38;5;9;4m++ node warning:\e[0m Hi $(whoami) the cpu no. you used is more than the multiple of allowed ppn"  
+	printf "\nof this queue. So, you have been allocated 1 full extra node for better performance setup."
+	printf "\nPlease in future try to avoid this.\n"
+	((nnode++))
+	cpunr=$((pernode*nnode))
+fi
+#
+# Is the requested version of VASP available?
+#
+
+if [ -z "$version" ]; then
+    version="$version_default"
+fi
+
+#
+# Defines the location of the programs.
+#
+pversion=${version%-*}
+case "$pversion" in
+	4.2.1)  binary_location="/chemsoft/orca/orca_4_2_1_linux_x86-64_openmpi314" ;;
+	4.0.1.2)  binary_location="/chemsoft/orca/orca_4_0_1_2_linux_x86-64_openmpi202" ;;
+	*) printExit E "Unknown program version requested."
+esac
+
+#
+# Setup the default locations for the submitscript and the output/error
+# files.
+#
+
+submitfiledir=$HOME/cmd
+[ -d $submitfiledir ] || mkdir $submitfiledir || printExit E "Can't create \"$submitfiledir\"."
+[ -r $submitfiledir -a -w $submitfiledir ] || printExit E "Invalid permissions for \"$submitfiledir\"."
+stdoutdir=$HOME/err
+[ -d $stdoutdir ] || mkdir $stdoutdir || printExit E "Can't create \"$stdoutdir\"."
+[ -r $stdoutdir -a -w $stdoutdir ] || printExit E "Invalid permissions for \"$stdoutdir\"."
+chkdir=$HOME/chk
+[ -d $chkdir ] || mkdir $chkdir || printExit E "Can't create \"$chkdir\"."
+[ -r $chkdir -a -w $chkdir ] || printExit E "Invalid permissions for \"$chkdir\"."
+
+#
+# Assemble the names for the input, output and error file.
+#
+
+jobname="$calculation_directory"
+if testDirectory "$jobname" "return" ; then
+    pushd $jobname > /dev/null
+    indirectory=`pwd -P`
+    popd > /dev/null
+    jobname=$indirectory
+else
+    printExit E "No directory \"$calculation_directory\" was found."
+fi
+
+#
+# Set some other filenames.
+#
+
+jobname=${jobname##*/}
+if [ ! "$CMDOPT_N" ]; then
+    jobtitle=$jobname
+else
+    if [ "${jobtitle:${#jobtitle}-1:1}" = "#" ]; then
+        jobtitle="${jobtitle:0:${#jobtitle}-1}$jobname"
+    fi
+    if [ "${jobtitle:${#jobtitle}-1:1}" = "@" ]; then
+        jobtitlepath=${indirectory//\//.}
+        jobtitlepath=${jobtitlepath#.*.*.}
+        jobtitlepath=${jobtitlepath#*.}
+        jobtitle=${jobtitle:0:${#jobtitle}-1}$jobtitlepath
+    fi
+fi
+
+submitfile=$submitfiledir/$jobname.$$.orca.sh
+stderrfile=$stdoutdir/$jobname.stderr
+stdoutfile=$stdoutdir/$jobname.stdout
+rm -f $submitfile
+rm -f $stderrfile
+rm -f $stdoutfile
+
+#
+# Adjust the time according of being a serial or parallel job.
+#
+
+if [ -z "$CMDOPT_T" ]; then
+        time=$time_p
+fi
+
+if [ "${time#*:}" != "$time" ]; then
+    time_h=${time%:*}
+    time_m=${time#*:}
+    if [ -z "$time_h" ]; then
+        time_h="0";
+    fi
+    if [ -z "$time_m" ]; then
+        time_m="0";
+    fi
+    if ! expr "$time_h" : '[[:digit:]]*$' >/dev/null || ! expr "$time_m" : '[[:digit:]]*$' >/dev/null ; then
+        printExit E "Value for time not numeric."
+    fi
+    time=$(((time_h * 60 + time_m) * 60))
+else
+    time=`echo $time | tr "[a-z]" "[A-Z]"`
+    if expr INFINITY : $time >/dev/null; then
+        time=INFINITY
+    else
+        if ! expr "$time" : '[[:digit:]]*$' >/dev/null; then
+            printExit E "Value for time not numeric."
+        fi
+        time=$((time * 3600))
+    fi
+fi
+
+#
+# Get the final eMail address from the user's .forward file.
+#
+
+#FORWARD=~/.forward
+#if [ -f "$FORWARD" -a -r "$FORWARD" ]; then
+#    USER=`cat $FORWARD`
+#else
+#    printExit E "Please put your email address in a file \`~/.forward'."
+#fi
+#
+# Give the user some feedback, that all tests went okay, and the job is to
+# be submitted.
+#
+ninputfile=$(find $indirectory -maxdepth 1 -type f -name "*.inp" -printf x | wc -c)
+if [ $ninputfile -gt 0 ];then
+	if [[ $ninputfile -gt 1 ]];then
+		printf "\n\e[38;5;9;4m++ input file error:\e[0m Hi $USER, multiple input file is find in the requested folder."
+		printf "\n This might cause unexpected error. Keep only one of them please and resubmit the job.\n\n"
+		exit
+	fi
+else
+	printf "\n\e[38;5;9;4m++ input file error:\e[0m Hi $USER, no input file is find in the requested folder."
+	printf "\n The input file should be with '.inp' extension only. \n\n"
+	exit
+fi
+	
+
+if (! grep -q -iF "PAL" $indirectory/*.inp) && (($cpunr > 1));then
+	printf "\n\e[38;5;9;4m++ parrallelization warning:\e[0m Hi $USER, you are trying to submit job in serial mode."
+	printf "\nIt will use only single core. But you are asking for parrallel cpu. Are you sure about what you are doing?\n"
+	printf "\nRequested total CPU: $cpunr\n\n"
+	echo "-- Do you want me to reset things and continue? If yes press y/Y/yes/YES else press ENTER to quite."
+	echo "Press y/Y/yes/YES if you want me to fix. Else n/N/No/NO if you want to continue with your settings. Else press ENTER to quite."
+	read contin
+	if [[ ${contin,, } = y* ]]; then
+		tmpfname=$(find $indirectory -type f -name "*.inp")
+		printf "\n* Please check out 'pal' option in orca input file.\n\n"
+		sed -i "2i %pal \n nprocs $cpunr \nend" $tmpfname
+	elif [[ ${contin,, } = n* ]]; then
+		serial_mode='timeout $MPIEXEC_TIMEOUT '	
+	else
+		printf "\n* Please check out PAL option in orca manual for parallel orca.\n\n"
+		exit
+	fi
+fi
+
+[[ $cpunr -eq 1 ]] && serial_mode='timeout $MPIEXEC_TIMEOUT '	
+
+printf "\n\e[38;5;200m++ Hi $(whoami)\e[0m"
+printf "\n*********** \e[38;5;34mYour Submit Job Summary\e[0m *****************\n"
+echo "Submitting a Orca calculation for: ${indirectory##*/}"
+echo "Memory: $mmemory MB, Time: $time seconds"
+echo "Queue: $resources, CPU no.: $cpunr, Node: (nodes=$nnode:ppn=$pernode)"
+echo "========================================================="
+echo " "
+#
+# Open the file descriptor 3 for the output of the assembled
+# submit script.
+#
+
+exec 3> $submitfile
+
+function header1
+{
+#
+# Write the standard header to the submit file. This lines will be there in every case.
+# 
+cat >&3 <<-EOF
+	#!/bin/bash 
+	#PBS -N $jobtitle
+	#PBS -o $stdoutdir -e $stdoutdir
+	#PBS -l nodes=${nnode}:ppn=$pernode
+	#PBS -l walltime=$((time+cleantime)),pmem=${mmemory}MB,mem=$((mmemory*pernode))MB 
+	#PBS -m ea
+	#PBS -r n
+EOF
+	#
+	# If the user puts the job on hold, include this.
+	#
+	if [ -n "$CMDOPT_H" ] ; then
+	    echo "#PBS -h" >&3
+	fi
+	#
+	# If a job id was given to wait for, do it.
+	#
+	if [ -n "$CMDOPT_J" ] ; then
+	    if [ "${jobid:${#jobid}-1:1}" = "@" ]; then
+	        echo "#PBS depend=singleton" >&3
+	    else
+	        echo "#PBS depend=afterok:$jobid" >&3
+	    fi
+	fi
+	#
+	# If the user specify some extra options, include this line in the
+	# submit file.
+	#
+	if [ -n "$resources" ] ; then
+	    echo "#PBS -q $resources" >&3
+	fi
+}
+#
+# Generate the whole script now.
+#
+function CreateScratch_CopyInput 
+{
+cat >&3 <<-EOF
+
+	#========================================================
+	#************* Prepare the job folders in scratch *******
+
+	echo "+ Preparing scratch: "
+	TMP_DIR=/scratch/orca_\${USER}.\${PBS_JOBNAME}.\${PBS_JOBID%%.*}
+	printf "+ Copy Input to local node scratch: \${SOURCE_INPUT_DIR} --> \$TMP_DIR\\n"
+	for N in \$NODE_LIST; do
+		echo "Node: \$N"
+		ssh -x \$N  "mkdir -p \$TMP_DIR && cp \${SOURCE_INPUT_DIR}/{*.inp,*.xyz} \$TMP_DIR/"
+	done
+	echo 
+EOF
+}
+
+function BookKeeping
+{
+	BookKeepFile="$HOME/T3000_Orca_book_keeping"
+	if [ -f $BookKeepFile ]; then
+		:
+	else
+		echo '# date   user  pbs_jobname short_job_path pbs_jobid: node_list' > $BookKeepFile
+	fi
+
+	short_s=$(cut -c -30 <<<${indirectory})  # Collects -le 30 char from begining`
+	Run_File=$(echo *.inp) 
+
+cat >&3 <<-EOF
+
+	#=======================================================
+	#**** Puts the PBS job details in the book keeping *****
+	#**** file for future inspection, if needed.       *****
+
+	USER=\$(whoami)
+	SOURCE_INPUT_DIR=$indirectory
+	short_source=$short_s  # Collects -le 30 char from begining
+	NODE_LIST=\$(cat \$PBS_NODEFILE | uniq)
+	
+	printf "%-35s %-15s %-15s %-31s %-9s" "\$(date)" \$USER \${PBS_JOBNAME} \${short_source} \${PBS_JOBID%%.*}: >> $BookKeepFile 
+	echo \$NODE_LIST >> $BookKeepFile
+EOF
+}
+
+function CopyOutput
+{
+	if [ -z "$CMDOPT_KK" ]; then
+	       echo 'find $TMP_DIR -type f -name "*.tmp" -delete'>&3
+	fi
+cat >&3 <<-EOF
+
+	#=======================================================
+	#******* Copy the outut files from scratch to home *****
+
+	printf "+ Copy Output to Home: \$TMP_DIR --> $indirectory\\n\\n"
+	cp \$TMP_DIR/*  $indirectory/
+EOF
+}
+
+function CleanScratch
+{
+cat >&3 <<-EOF
+
+	#=======================================================
+	#************ Cleaning scratch *************************
+
+	echo "+ Cleaning scratch: "
+	for N in \$NODE_LIST; do
+		echo "Node: \$N -- \$TMP_DIR"
+		ssh -x \$N  rm -rf \$TMP_DIR
+	done
+	printf "\\n+ End: Good work. I am done.\\n"
+
+
+EOF
+}
+
+function header2
+{
+cat >&3 <<-EOF
+
+	#=======================================================
+	#*********** Export all the necessary paths ************
+
+	umask 022
+	ulimit -c 0
+	#Give 1min to clean scratch because 'trap' command is not working here as expected
+	#Don't worry. I have already added extra ${cleantime} sec in the PBS_WALLTIME beforehand.
+	export MPIEXEC_TIMEOUT=\$((PBS_WALLTIME-${cleantime})) 
+	export OMP_NUM_THREADS=1
+	module load orca/$pversion
+EOF
+}
+function JobRun
+{
+# The stack size need to be set to unlimited for large calculations for e.g. large supercell.
+# Else there will be SIGSEGV
+cat >&3 <<-EOF
+
+	#=======================================================
+	#********** Run the job ********************************
+
+	trap 'echo "*** Get SIGTERM signal";' TERM
+	
+	cd \$TMP_DIR
+	$serial_mode$binary_location/orca $Run_File $OUTPUT_OPERATION ${Run_File%.*}.out
+EOF
+}
+
+header1
+header2
+BookKeeping
+CreateScratch_CopyInput
+JobRun
+CopyOutput
+CleanScratch
+#
+# End of the parallel configuration.
+#
+
+#
+# Give back the error, to avoid confusion.
+#
+
+#echo "exit \$joberror" >&3
+
+#
+# Close the file descriptor for the submit file.
+#
+
+exec 3>&-
+
+#
+# Now, there are only two things left to do:
+# Submit the submitfile, and afterwards delete it.
+# (Unless "keep" option selected.)
+#
+
+if [ -z "$CMDOPT_K" ] ; then
+    if [ -n "$CMDOPT_Y" -o -n "$CMDOPT_YY" ] ; then
+        JOB_ID=$(qsub $submitfile)
+        JOB_ID=${JOB_ID%%.*}
+        if [ -n "$CMDOPT_Y" ]; then
+            echo -n "$JOB_ID" >&4
+        fi
+        if [ -n "$CMDOPT_Y" -a -n "$CMDOPT_YY" ] ; then
+            echo -n " " >&4
+        fi
+        if [ -n "$CMDOPT_YY" ]; then
+            echo -n "$jobtitle" >&4
+        fi
+        echo >&4
+    else
+        qsub $submitfile
+    fi
+    rm -f $submitfile
+else
+    printf "\e[38;5;4m++ Keeping the submitfile. Necessary command to submit this job:\e[0m\n"
+    echo -e "    \e[38;5;20m qsub $submitfile \e[0m"
+fi
+
+printf "\n+++++++++ \e[38;5;200mBye!! Have a nice day.\e[0m +++++++++++++++++\n\n"
+printf "\n\e[38;5;1m**Alert: If you delete a running job, cleaning scratch wouldn't be complete.\e[0m \n"
+printf "\e[38;5;1m You have to copy the files back and clean the scratch manually. Sorry for that. \e[0m \n\n"
+
+#
+# Well, that's all. Now exit in a proper way.
+#
+#sleep 5
+exit 0
