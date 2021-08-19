@@ -1,0 +1,700 @@
+#!/bin/sh
+#       subvasp -  VASP submit script
+
+if [ -z "$TaurusMyMail" ];then
+	printf "\n\e[38;5;20m===================================================================================================================\e[0m\
+\n\e[38;5;200mHi $(whoami),\e[0m\n
+\e[38;5;0mit looks like, you are the 1st time user of our 'subvasp' script here. Please set up the below\n\
+mentioned environment variables for future references.\n\
+1.  export TaurusMyMail='xyz@abc.efg'  # email id where you want to get the job notifications. 'tu.dresden' email id is recommended. But Leipzig email will also work.\n\
+2.  export PATH='/projects/p_reactivity/VASP':\$PATH # PATH where our all the vasp related scripts are there.\n\
+Use 'subvasp -h' or 'subvasp --help' to get instant help of this script OR type 'man subvaspman' to know more about this script.\n\n\e[0m\
+\e[38;5;34mAdvertishment: You can also take advantage of our other scripts such as 'PotVasp' to create POTCAR file automatically.\n\
+               Please check them out. You might like some of them. Feel free to use any one of them.\e[0m\n\n\
+\e[38;5;1mNote: Please use all the scripts here at your own risk.\e[0m\n\n\
+\e[38;5;20mThank you for using our scripts. Hope you will enjoy. Bye. Have a nice day.\n
+===================================================================================================================\n\n\e[0m"
+	exit
+fi	
+
+PGM_NAME="subvasp"
+PGM_VERSION="2.0"
+
+SCRIPT_ROOT="$(dirname $(readlink -f $0))"
+OUTPUT_OPERATION=">"
+
+#
+# Setup the default values for the user options.
+#
+
+time_p="8"
+memory_default="2000"
+cpunr="24"
+resources=""
+version_default=${VASP_VERSION:-5.4.4+}
+timestp=${TIME_PARTITION:-8}
+calculation_directory[0]="."
+mycount=0
+nel='False'
+won='False'
+dcondition='afterany'
+
+if [[ "$timestp" =~ [A-Za-z.:] ]];then
+	printf "\n\e[38;5;9;4m++ Error:\e[0m Hi $(whoami), Please provide only int numeric value (in hour unit) in TIME_PARTITION. No Character before or after that.\n\n"
+	exit 1
+fi
+timestep_division=$((timestp*3600))
+
+function usage
+{
+    cat <<-EOF
+$PGM_NAME $PGM_VERSION
+Usage: $PGM_NAME [-acuUxhHkyYz] [-e PARTITION] [-d/D dependency] [-m SIZE] [-N NAME] [-o RESOURCE_REQUEST_LIST]
+       [-p CPUS] [-r DIRECTORY_FILE] ... [-t TIME] [-v VERSION] [-w DIRECTORY_PATH] --help
+
+See \`man ${PGM_NAME}man' for more information.
+
+EOF
+
+    exit 2
+}
+
+function display_defaults
+{
+    cat <<-EOF
+Defaults: -m $memory_default
+          -t $time_p (in hour)
+          -v $version_default
+          -p $cpunr
+          -e haswell64
+          TIME_PARTITION=$timestp (in hour)
+          Node exclusive: $nel
+          Wait till all node ready: $won
+
+EOF
+}
+
+#
+# If there is an unrecoverable error: display a message and exit.
+#
+
+function printExit
+{
+    case $1 in
+        [iI]) echo INFO: "$2" ;;
+        [wW]) echo WARNING: "$2" ;;
+        [eE]) echo ERROR: "$2" ; exit 1 ;;
+           *) echo "$1" ;;
+    esac
+}
+
+#
+# Test, whether we can access the given file for input.
+#
+
+function testFile
+{
+    if [ ! -r "$1" -o ! -f "$1" ] ; then
+        if [ "$2" = "return" ] ; then
+            returncode="1"
+        else
+            printExit E "Inputfile \"$1\" was not found."
+        fi
+    else
+        returncode="0"
+    fi
+
+    return "$returncode"
+}
+
+#
+# Test, whether we can access the given file for input.
+#
+
+function testDirectory
+{
+    if [ ! -r "$1" -o ! -d "$1" ] ; then
+        if [ "$2" = "return" ] ; then
+            returncode="1"
+        else
+            printExit E "Inputdirectory \'$1' was not found."
+        fi
+    else
+        returncode="0"
+    fi
+
+    return "$returncode"
+}
+
+#
+# Special options which will quit the script.
+#
+
+function display_only()
+{
+    OPTIND=1
+    while getopts :ad:D:e:cxHkuUm:N:o:p:r:t:v:w:yYz options ; do
+        case $options in
+
+            a) CMDOPT_A="1" ;;
+
+            z) CMDOPT_Z="1" ;;
+
+           \?) ;;
+
+        esac
+    done
+}
+
+#
+# Process options from the command line or the rc files.
+#
+
+function settings()
+{
+    OPTIND=1
+
+    while getopts :ad:D:e:cxHkuUm:N:o:p:r:t:v:w:yYz options ; do
+        case $options in
+
+            a) ;;
+
+            c) waitnodeall="1" 
+               won='True' ;;
+
+            e) parti=$OPTARG
+               CMDOPT_E="1" ;;
+
+            H) CMDOPT_H="1" ;;
+
+            d) CMDOPT_D1="1"
+               mydependency=$OPTARG ;;
+
+            D) CMDOPT_D2="1"
+               mydependency=$OPTARG ;;
+
+            k) CMDOPT_K="1" ;;
+
+            m) memory=$OPTARG ;;
+
+            N) CMDOPT_N="1"
+               jobtitle=$OPTARG ;;
+
+            o) resources="$OPTARG" ;;
+
+            p) CMDOPT_P="1"
+               cpunr=$OPTARG ;;
+
+            r) CMDOPT_R="1"
+               file=$OPTARG ;;
+
+            t) CMDOPT_T="1"
+               time=$OPTARG ;;
+
+            u) dmtcp_tag2="1" ;;
+
+            U) dmtcp_tag1="1" ;;
+
+            v) version=$OPTARG ;;
+
+            w) calculation_directory[mycount++]=$OPTARG ;;
+
+            y) CMDOPT_Y="1" ;;
+
+            Y) CMDOPT_YY="1" ;;
+
+            x) nodeexclude="1" 
+               nel='True';;
+            z) ;;
+
+           \?) printExit E "Invalid option: -$OPTARG." ;;
+
+        esac
+    done
+
+    if [ -n "$CMDOPT_Y" -o -n "$CMDOPT_YY" ]; then
+       exec 4>&1
+       exec >&2
+    fi
+}
+
+if [ -z "$1" ] || [ "$1" = '-h' ] || [ "$1" = '--help' ] ; then
+        usage
+fi
+#
+# Test special options, which will quit the processing.
+#
+
+display_only "$@"
+
+#
+# Test the three possible default files, before the command line
+# is tested for the various options.
+#
+
+if [ -n "$CMDOPT_A" -o -n "$CMDOPT_Z" ]; then
+    echo "$PGM_NAME $PGM_VERSION"
+fi
+if [ -n "$CMDOPT_A" ]; then
+    display_defaults
+fi
+if [ -n "$CMDOPT_Z" ]; then
+    echo "Processed option file(s):"
+fi
+
+program=${0##*/sub}
+declare -a DEFAULT_FILE_LOCATION
+DEFAULT_FILE_LOCATION[1]=$SCRIPT_ROOT/subrc
+DEFAULT_FILE_LOCATION[2]=~/.subrc
+if [ `pwd` != ~ ]; then
+    DEFAULT_FILE_LOCATION[3]=.subrc
+fi
+for DEFAULT_FILE in ${DEFAULT_FILE_LOCATION[@]}; do
+    if [ -f "$DEFAULT_FILE" -a -r "$DEFAULT_FILE" ]; then
+        PARAMETER=`sed -n -e "/^ *$program /s/$program *//p" $DEFAULT_FILE`
+        if [ -n "$PARAMETER" ]; then
+            if [ -n "$CMDOPT_Z" ]; then
+               echo "$DEFAULT_FILE: $PARAMETER"
+            fi
+            eval settings $PARAMETER
+        fi
+    fi
+done
+
+#
+# Special case for -a and -z option.
+#
+
+if [ -n "$CMDOPT_Z" ]; then
+    echo
+fi
+if [ -n "$CMDOPT_A" -o -n "$CMDOPT_Z" ]; then
+    exit 2
+fi
+
+#
+# Now process the command line.
+#
+
+settings "$@"
+
+#
+# Shift the arguments up to the input without the option prefix "-".
+# This should be the filename.
+#
+
+shift $((OPTIND-1))
+
+#
+# Test, whether there are any user inputs. Else display the usage
+# description of the command.
+#
+
+[ -n "$1" ] && usage
+
+if [ -z "$CMDOPT_T" ]; then
+        time=$time_p
+fi
+
+if [ "${time#*:}" != "$time" ]; then
+    time_h=${time%:*}
+    time_m=${time#*:}
+    if [ -z "$time_h" ]; then
+        time_h="0";
+    fi
+    if [ -z "$time_m" ]; then
+        time_m="0";
+    fi
+    if ! expr "$time_h" : '[[:digit:]]*$' >/dev/null || ! expr "$time_m" : '[[:digit:]]*$' >/dev/null ; then
+        printExit E "Value for time not numeric."
+    fi
+    time=$(( (time_h * 60 + time_m) * 60 ))
+else
+    time=`echo $time | tr "[a-z]" "[A-Z]"`
+    if expr INFINITY : $time >/dev/null; then
+        time=INFINITY
+    else
+        if ! expr "$time" : '[[:digit:]]*$' >/dev/null; then
+            printExit E "Value for time not numeric."
+        fi
+        time=$((time * 3600))
+    fi
+fi
+
+#
+# Assemble the names for the input, output and error file.
+#
+
+if [ "$CMDOPT_R" = "1" ]; then
+    while read line; do
+        calculation_directory[mycount++]=$line
+    done < $file
+fi
+if [ "$mycount" -eq 0 ];then
+    ((mycount=1))
+fi
+for ((index=0;index<mycount;index++)); do
+    if testDirectory "${calculation_directory[index]}" "return" ; then
+        indirectory[index]=$(readlink -f ${calculation_directory[index]})
+        jobname[index]=${indirectory[index]##*/}
+    else
+        printExit E "No directory \`${calculation_directory[index]}' was found."
+    fi
+done
+
+if [ -n "${dmtcp_tag1}" ];then
+	singlepoint=$(grep NSW ${indirectory}/INCAR | awk '{print $NF}')
+	if [[ $singlepoint -eq 0 ]];then
+		printf "\n\e[38;5;9;4m++ Error:\e[0m Hi $(whoami), -U option for singlepoint calculation is not allowed.\n"
+		printf "          Try using -u option. But note -u option is not tested properly yet.\n\n"
+		exit 1
+	fi
+fi
+
+if [[ $time -gt 604800 ]]; then # maximum limit is 7 days
+	if [ -n "$dmtcp_tag2" ]; then  
+		singlepoint=$(grep NSW ${indirectory}/INCAR | awk '{print $NF}')
+		if [[ $singlepoint -eq 0 ]];then
+			printf "\n\e[38;5;9;4m++ Warning:\e[0m Hi $(whoami), you want to submit a VASP singlepoint calculation with >7days !!!. Interesting. \n"
+		fi
+	else
+		printf "\n\e[38;5;9;4m++ Error:\e[0m Hi $(whoami), you have requested for more than maximum time limit (7 days) allowed in this cluster.\n"
+		printf "            Please adjust to less than 7 days or resubmit the job with -u/-U option\n\n"
+		exit 1
+	fi
+fi
+#
+# Transfer the default values.
+#
+if [ -z "$memory" ]; then
+    memory="$memory_default"
+fi
+
+#
+# Is the requested version of VASP available?
+#
+
+if [ -z "$version" ]; then
+    version="$version_default"
+fi
+
+moduleload='VASP/5.4.4-intel-2019b'
+
+# Please add this binary path if you don't have module. If you have module then binary path is optional.
+# In binary path, it is mandatory for it to end with '/'.
+pversion=${version%-*}
+case "$pversion" in
+
+        6.2.0) binary_location=''  #'PATH to binary': optional
+               moduleload='VASP/x'
+               printf "\n\e[38;5;9m++ Error:\e[0m Sorry, the version 6.2.0 is not available yet.\n\n"
+               exit;;
+
+      6.2.0+x) binary_location='PATH to binary' 
+               moduleload='VASP/x' 
+               printf "\n\e[38;5;9m++ Error:\e[0m Sorry, the version 6.2.0 is not available yet.\n\n"
+               exit;;
+      
+      5.4.4+c) binary_location="/home/bamo066d/local/VASP5.4.4/" ;;
+
+       5.4.4+) binary_location="/sw/installed/VASP/5.4.4-intel-2019b/bin/" ;; #optional
+
+           *) printExit E "Unknown program version requested."
+esac
+
+ppversion=${version#*-}
+case "$ppversion" in
+        n) vaspbinary="vasp_ncl" ;;
+        g) vaspbinary="vasp_gam" ;;
+        *) vaspbinary="vasp_std" 
+esac
+
+#
+#
+# Setup the default locations for the submitscript and the output/error
+# files.
+#
+
+submitfiledir=$HOME/cmd
+[ -d $submitfiledir ] || mkdir $submitfiledir || printExit E "Can't create \"$submitfiledir\"."
+[ -r $submitfiledir -a -w $submitfiledir ] || printExit E "Invalid permissions for \"$submitfiledir\"."
+stdoutdir=$HOME/err
+[ -d $stdoutdir ] || mkdir $stdoutdir || printExit E "Can't create \"$stdoutdir\"."
+[ -r $stdoutdir -a -w $stdoutdir ] || printExit E "Invalid permissions for \"$stdoutdir\"."
+
+#
+# Set some other filenames.
+#
+
+if [ ! "$CMDOPT_N" ]; then
+    jobtitle=$jobname
+else
+    if [ "${jobtitle:${#jobtitle}-2:1}" = "%" ]; then
+        jobdelimiter="${jobtitle:${#jobtitle}-1:1}"
+        jobtitle="${jobtitle:0:${#jobtitle}-2}"
+        for ((index=0;index<mycount;index++)); do
+            if [ "$index" -ne 0 ]; then
+                jobtitle="$jobtitle$jobdelimiter"
+             fi
+            jobtitle="$jobtitle${jobname[index]}"
+        done
+    fi
+    if [ "${jobtitle:${#jobtitle}-1:1}" = "#" ]; then
+        jobtitle="${jobtitle:0:${#jobtitle}-1}$jobname"
+    fi
+    if [ "${jobtitle:${#jobtitle}-1:1}" = "@" ]; then
+        jobtitlepath=${indirectory//\//.}
+        jobtitlepath=${jobtitlepath#.*.*.}
+        jobtitlepath=${jobtitlepath#*.}
+        jobtitle=${jobtitle:0:${#jobtitle}-1}$jobtitlepath
+    fi
+fi
+
+submitfile=$submitfiledir/$jobname.$$.vasp.sh
+stderrfile=$stdoutdir/$jobname.stderr
+stdoutfile=$stdoutdir/$jobname.stdout
+rm -f $submitfile
+rm -f $stderrfile
+rm -f $stdoutfile
+
+#
+# Adjust the time according of being a serial or parallel job.
+#
+
+#
+# Test the option string for spaces.
+#
+
+if [ "$resources" != "${resources// /}" ]; then
+    printExit E "The option string supplied to -o must not contain any spaces."
+fi
+
+#
+# Give the user some feedback, that all tests went okay, and the job is to
+# be submitted.
+#
+printf "\n\e[38;5;200m++ Hi $(whoami)\e[0m"
+printf "\n*********** \e[38;5;34mYour Submit Job Summary\e[0m *****************\n"
+echo "Submitting a VASP calculation for: ${indirectory##*/}"
+echo "Memory: $memory MB, Time: $time seconds, #CPU: $cpunr"
+echo "Node exclusive: $nel"
+echo "Wait till all node ready: $won"
+echo "========================================================="
+echo " "
+
+#
+# Open the file descriptor 3 for the output of the assembled
+# submit script.
+#
+
+exec 3> $submitfile
+
+#
+# Write the standard header to the submit file. This lines will be there in every case.
+#
+
+cat >&3 <<-EOF
+	#!/bin/bash
+	#SBATCH --ntasks=$cpunr
+	#SBATCH --cpus-per-task=1
+	#SBATCH --mem-per-cpu=${memory}
+	#SBATCH --no-requeue
+	#SBATCH --job-name="$jobtitle"
+	#SBATCH --mail-type=fail,end
+	#SBATCH --mail-user=$TaurusMyMail
+	#SBATCH --error=${stderrfile}_%j
+	#SBATCH --output=${stdoutfile}_%j
+	EOF
+
+if [ -n "$waitnodeall" ];then
+	echo "#SBATCH --wait-all-nodes=1" >&3
+fi
+
+if [ -n "$nodeexclude" ];then
+	echo "#SBATCH --exclusive" >&3
+fi
+
+if [ -n "$CMDOPT_E" ]; then
+    echo "#SBATCH --partition=$parti" >&3
+else
+	if [ "$memory" -gt 2541 ];then
+		if [ "$memory" -gt 5250 ]; then
+			echo "#SBATCH --partition=haswell256" >&3
+		else
+			echo "#SBATCH --partition=haswell128" >&3
+		fi
+	else
+		echo "#SBATCH --partition=haswell64" >&3
+	fi
+fi
+
+runcommand="mpiexec -n $cpunr"
+submitcommand="sbatch"
+if [[ "$time" -gt ${timestep_division} ]];then #if time>8h
+	if [ -n "${dmtcp_tag1}" ];then
+		ttime=$((time/timestep_division))
+		ettime=$((time%timestep_division))
+		echo "#SBATCH --time=0:${timestep_division}" >&3
+	elif [ -n "${dmtcp_tag2}" ];then
+		printf "\n\e[38;5;9;4m++ WARNING:\e[0m Hi $(whoami), job submit with dmtcp is not tested throughly yet. Someone should test it and change this part accordingly.\n\n"
+		echo " " >&3
+		if ! module list | grep -q 'DMTCP/2.5.1'; then module load DMTCP/2.5.1;fi
+		dmtcpmoduleload='module load DMTCP/2.5.1' 
+		runcommand="mpiexec -n $cpunr dmtcp_launch --ib --rm"
+		submitcommand="dmtcp_sbatch -t 00:$time -i ${timestep_division},800"
+	else
+		printf "\n\e[38;5;9;4m++ WARNING:\e[0m Hi $(whoami), you are submitting job with more than ${timestp}h. It is recommended to use -u/-U option here.\n"
+		printf "            Long time job will affect the job priority. Please check out cluster wiki for more details.\n\n"
+		echo "#SBATCH --time=0:$time" >&3
+	fi
+else
+	echo "#SBATCH --time=0:$time" >&3
+fi
+#
+# If the user puts the job on hold, include this.
+#
+
+if [ -n "$CMDOPT_H" ] ; then
+    echo "#SBATCH --hold" >&3
+fi
+
+if [ -n "$CMDOPT_D1" ] || [ -n "$CMDOPT_D2" ];then
+	if [[ "$mydependency" =~ ':' ]];then
+		echo "#SBATCH --dependency=$mydependency" >&3
+	else
+		echo "#SBATCH --dependency=${dcondition}:${mydependency}" >&3
+	fi
+fi
+
+if [ -n "$resources" ] ; then
+   echo "#SBATCH --constraint=${resources}" >&3
+fi
+
+cat >&3 <<-EOF
+
+	umask 022
+	ulimit -c 0
+	export OMP_NUM_THREADS=1
+	module purge
+	module load ${moduleload}
+	$dmtcpmoduleload
+
+	cd $indirectory
+	$runcommand bash -c "ulimit -Ss unlimited && ${binary_location}${vaspbinary}" $OUTPUT_OPERATION $jobtitle.out
+
+	wait
+
+	exit
+	EOF
+
+#
+# Close the file descriptor for the submit file.
+#
+
+exec 3>&-
+
+if [ -n "$CMDOPT_D2" ];then
+	sed -i '/mpiexec/i [ -s "CONTCAR" ] && mv CONTCAR POSCAR' $submitfile
+fi
+
+if [ -n "${dmtcp_tag1}" ];then
+	sed -i '/exit/i echo "I am finished. Rest chain jobs are cancelled."\n./cancel_rest_job' $submitfile	
+	awk '
+/mpiexec/ {
+print "#-------------------------------------------------------------------------------\n\
+if ! grep -q \"E0\" OSZICAR; then \n\
+	echo \"Error: The timestep limit is not sufficient for even single ionic step calculation. Please re-check. Single point eqvt. calculation is not allowd with -U.\" \n\
+	./cancel_rest_job \n\
+	exit 1 \n\
+fi \n\
+if [ ! -s \"CONTCAR\" ];then \n\
+	echo \"Error: Huston, we have some problem with CONTCAR. It is either empty or corrupted or does not exists.\" \n\
+	./cancel_rest_job \n\
+	exit 1 \n\
+fi \n\
+\n\
+mv CONTCAR POSCAR\n\
+#---------------------------------------------------------------------------------------\n\
+"
+}
+{ print }
+' $submitfile > submitfile_tmp
+
+fi
+#
+# Now, there are only two things left to do:
+# Submit the submitfile, and afterwards delete it.
+# (Unless "keep" option selected.)
+#
+
+if [ -z "$CMDOPT_K" ] ; then
+    if [ -n "$CMDOPT_Y" -o -n "$CMDOPT_YY" ] ; then
+        JOB_ID=$(sbatch $submitfile)
+        JOB_ID=${JOB_ID##* }
+        if [ -n "$CMDOPT_Y" ]; then
+            echo -n "$JOB_ID" >&4
+        fi
+        if [ -n "$CMDOPT_Y" -a -n "$CMDOPT_YY" ] ; then
+            echo -n " " >&4
+        fi
+        if [ -n "$CMDOPT_YY" ]; then
+            echo -n "$jobtitle" >&4
+        fi
+        echo >&4
+    else
+	if [ -n "${dmtcp_tag1}" ];then
+cat >${indirectory}/cancel_rest_job << EOF
+CANCEL_ID=\$SLURM_JOB_ID 
+while read Jobid;do 
+	if [[ \$Jobid -gt \$CANCEL_ID ]];then 
+		scancel \$Jobid 
+	fi 
+done < JOBIDs 
+wait 
+sleep 60 
+exit
+EOF
+chmod +x cancel_rest_job
+		if [ -s "${indirectory}/JOBIDs" ]; then rm ${indirectory}/JOBIDs; fi
+		if [ -s "${indirectory}/Finish" ]; then rm ${indirectory}/Finish; fi
+	        JID=$(sbatch "$submitfile" | awk '{print $NF}')
+		for I in $(seq 2 $ttime); do
+        		outjid=$(sbatch --dependency afterany:$JID submitfile_tmp | awk '{print $NF}')
+			JID=$outjid
+			echo $JID >> ${indirectory}/JOBIDs
+		done
+		if [[ $ettime -gt 0 ]]; then 
+       			sed -i -re "s/(--time=)[^=]*$/\1 00:$ettime/" submitfile_tmp 
+			outjid=$(sbatch --dependency afterany:$JID $submitfile_tmp | awk '{print $NF}')
+			echo $outjid >> ${indirectory}/JOBIDs
+		fi
+		rm submitfile_tmp
+	else
+		$submitcommand "$submitfile"
+	fi
+	rm -f $submitfile
+    fi
+else
+	if [ -n "${dmtcp_tag1}" ] ; then
+		printf "\e[38;5;4m++ The submitfile with -U option is  a chain job and depends on JobID. Untill you submit the job, there\n"
+		printf "   will be no JobIDs and hence you should not just submit these submitfiles. These are just for inspection.\e[0m\n\n"
+		mv submitfile_tmp ${submitfile}_2 
+		printf "\e[38;5;4m++ submitfile1: $submitfile \e[0m\n"
+		printf "\e[38;5;4m++ submitfile2: ${submitfile}_2 \e[0m\n"
+		if [[ $ettime -gt 0 ]]; then 
+       			sed -re "s/(--time=)[^=]*$/\1 00:$ettime/" ${submitfile}_2 > ${submitfile}_3
+			printf "\e[38;5;4m++ submitfile3: ${submitfile}_3 \e[0m\n"
+		fi
+	else
+		printf "\e[38;5;4m++ Keeping the submitfile. Necessary command to submit this job:\e[0m\n"
+		echo -e "    \e[38;5;20m $submitcommand $submitfile \e[0m"
+	fi
+fi
+
+printf "\n+++++++++ \e[38;5;200mBye!! Have a nice day.\e[0m +++++++++++++++++\n\n"
+#
+# Well, that's all. Now exit in a proper way.
+#
+
+sleep 2
+exit 0

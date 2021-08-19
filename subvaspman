@@ -1,0 +1,210 @@
+.TH SUBVASP 1 "13 NOVEMBER 2020" "subvasp 2.0" "User Commands"
+.SH NAME
+subvasp \- VASP submit script
+.SH SYNOPSIS
+.B subvasp
+.RB [ "\-hHacuUxkyYz" ]
+.RB [ "\-e \fIPARTIION" ]
+.RB [ "\-d/D \fIDependency" ]
+.RB [ "\-m \fISIZE" ]
+.RB [ "\-N \fINAME" ]
+.RB [ "\-o \fIRESOURCE_REQUEST_LIST" ]
+.RB [ "\-p \fICPUS" ]
+.RB [ "\-t \fITIME" ]
+.RB [ "\-v \fIVERSION" ]
+.RB [ "\-w \fIDIRECTORY_PATH" ]
+.B \-\-help
+.SH DESCRIPTION
+This manual page documents \fBsubvasp\fP, a submit script for VASP calculation with the input directory \fIDIRECTORY_PATH\fP.
+.SS Options
+.TP
+.B \-a
+Shows the applied defaults for the current user. All further processing will be stopped.
+.TP
+.B \-c
+If you want to use the option --wait-all-nodes. This will wait till all the requested nodes are ready. Note this will increase the queue time but would speed up the run time. [highly
+recommended]
+.TP
+.B \-e
+If you want to use partitions other than haswell.
+.TP
+.B \-H
+Put the job on hold, until released by the user.
+.TP
+.B \-h
+Show help for subvasp script. You can also use \fB\-\-help\fR or only basename \fBsubvasp\fR without any arguments.
+.TP
+.B \-d/D \fIdependency
+Specifies the dependency on previous JOB(s) before this job will start.
+.PP
+.RS
+Either you can pass just the JOB_ID(s) [job_ids should be seperated by ':'] of your previous job(s). Then the default condition \fBafterany\fR will be used. You can also pass full dependency with your choice of dependency condition just as described in slurm manual. E.g. "-d afterok:123:456,afternotok:789"  etc.
+.PP
+Use '-D'(instead of '-d') if you additionally want to mv your CONTCAR to POSCAR before the mpiexecution starts for your current job.
+.RE
+.TP
+.B \-k
+Keep the generated commandfile in ~/cmd. It will neither be
+deleted, nor submitted.
+.TP
+.TP
+.B \-m \fISIZE
+Request a queue with having at least \fISIZE\fR MB of memory per processor(/core) per node (pmem). PBS
+will not allow your job to submit if you use more momemory than allowed RAM/process in each node of specified
+queue. Subvasp script will also exit with error msg if memory managment is not satisfied.
+The default is user dependent and will showup with the option \fB\-a\fP.
+.TP
+.B \-N \fINAME
+By default the name of the calculation directory will be taken for the
+name of the job also. If this is not convenient (or possible as the name
+of the directory starts with a digit), you can force the job to get
+a chosen \fINAME\fR of your own.
+.PP
+.RS
+If this \fINAME\fR ends with a hash, it will be substituted with the
+default name. E.g. \[oq]\fB-N\fR run_#\[cq] for the input directory \[oq]test\[cq] will result in
+\[oq]run_test\[cq] as jobname.
+.PP
+If this \fINAME\fR ends with an \[oq]@\[cq], it will be substituted with the pathname
+to the input directory while disregarding up to three top level directories which
+are usually /home/$USER/\fISOME_DIRECTORY\fP.
+.RE
+.TP
+.B \-o \fIRESOURCE_REQUEST_LIST\fR
+Request special resources on the queueing system. You may specify more than
+one request using a list of the form: \fIRESOURCE_REQUEST_LIST\fR=\fIRESOURCE_REQUEST\fR[,\fIRESOURCE_REQUEST\fR]*
+.TP
+.B \-p \fICPUS
+If you specify the \fB-p\fR option, you can request a parallel execution of the job
+with more than one CPU, which is the default.
+.TP
+.B \-t \fITIME
+Request a queue with a job time of \fITIME\fR hours. The value of \fITIME\fR can
+have the format [\fIHOURS\fR]:\fIMINUTES\fR for finer adjustment. As special value
+the case insensitive string \[oq]infinity\[cq] to request no time limit for this job
+is also supported.
+The default is user dependent and will showup with the option \fB\-a\fP.
+.TP
+.B \-u
+If you want to divide your job in smaller time sections (dmtcp option). Long running job is not recommended in this cluster. Please check out the cluster wiki rentime section for more details. [highly recommended for more than 8h job runtime. The default 8h limit partition can be overridden by the environment variable \fBTIME_PARTITION\fR (in h unit)]
+.TP
+.B \-U
+If you want to divide your job in smaller time sections (our implementation). Long running job is not recommended in this cluster. Please check out the cluster wiki rentime section for more details. This divides the total run time into small time chunks defined by \fBTIME_PARTITION\fR and submit the chain jobs. Before starting each chain job it mv CONTCAR to POSCAR and restart the calculation again. If CONTCAR has some problem it will immediately exit with error msg. If the TIME_PARTITION is not sufficient for even a single ionic step (eqvalent to singlepoint calculation) it will immediately exit with error msg. Before each chain job starts you can modify the INCAR file if you want. [Singlepoint calculation with this option is not allowed]
+.TP
+.B \-v \fIVERSION
+Specifies, what executable should be used for the VASP job. The
+available choices for \fIVERSION\fR are:
+.ad l
+.PP
+.RS
+.RS
+.PD 0
+.TP 12
+.B 5.4.4+
+VASP 5.4.4+ (default)
+.TP
+.B 5.4.4+-n
+VASP 5.4.4+ compiled with NCL option
+.TP
+.B 5.4.4+-g
+VASP 5.4.4+ compiled with \[*G]-point options (-DwNGXhalf, resp. -DwNGZhalf)
+.TP
+.B 5.4.4+c
+VASP 5.4.4+ Lattice vector constrained in x, y direction
+.TP
+.B 5.4.4+c-n
+VASP 5.4.4+ Lattice vector constrained in x, y direction compiled with NCL option
+.TP
+.B 5.4.4+c-g
+VASP 5.4.4+ Lattice vector constrained in x, y direction compiled with \[*G]-point options (-DwNGXhalf, resp. -DwNGZhalf)
+.TP
+.B 6.2.0
+Still unavailable. On its way. 
+.TP
+.B 6.2.0-n
+Still unavailable. On its way. 
+.TP
+.B 6.2.0-g
+Still unavailable. On its way. 
+.TP
+.B 6.2.0+x
+VASP 6.2.0 compiled with x constrain. Not available yet.
+.PD
+.RE
+.ad b
+.PP
+These are self-compiled versions, compiled with the Intel Fortran Compiler.
+.PP
+.char \[el] \f[S]\N'188'\fP
+.PP
+The above specified built-in default version of the application might be overridden by setting the environment variable \fBVASP_VERSION\fR to any of the listed values. The effective default will show up with the option \fB\-a\fP.
+.RE
+.TP
+.B \-w \fIDIRECTORY_PATH
+By default the directory, for which the calculation will be made, is
+the current working directory. By using this switch you can submit any
+directory to the job. So the default behavior could be written like:
+\[oq]\fB-w\fP .\[cq].
+.TP
+.B \-x
+If you want to use node --exclusive. This will allocate nodes with no sharing with others. Note this will increase the queue time but would speed up the run time. [highly recommended]
+.TP
+.B \-y
+The output of the submission script is redirected to \[oq]stderr\[cq] and the only output
+on \[oq]stdout\[cq] is the \fIJOB_ID\fR of the submitted job (unless used together with
+the \fB\-Y\fR option). This allows easy assignment of the \fIJOB_ID\fR to a variable when
+scripting the submission script. If \fB\-Y\fR is given too, \fIJOB_ID\fR and \fINAME\fR
+will be output to \[oq]stdout\[cq] in this order, separated by a space character.
+.TP
+.B \-Y
+The output of the submission script is redirected to \[oq]stderr\[cq] and the only output
+on \[oq]stdout\[cq] is the \fINAME\fR of the submitted job (unless used together with
+the \fB\-y\fR option). This allows easy assignment of the \fINAME\fR to a variable when
+scripting the submission script. If \fB\-y\fR is given too, \fIJOB_ID\fR and \fINAME\fR
+will be output to \[oq]stdout\[cq] in this order, separated by a space character.
+.TP
+.B \-z
+Shows the processed option file(s) for the current user (see
+.SM
+.B FILES
+below). All further processing will be stopped.
+.TP
+.B \-\-help
+Show help for subvasp script. You can also use \fB\-h\fR or only basename \fBsubvasp\fR without any arguments.
+.SH FILES
+.TP
+\fI$cwd/.subrc\fR
+cwd default option file
+.TP
+\fI$HOME/.subrc\fR
+user default option file
+.TP
+\fI<script_root>/subrc\fR
+common default option file
+.PP
+Each line in these files may have options for the used submit scripts. First
+in each line the name of the targeted submit script has to be specified, which
+is the scriptname, hence a line might read like:
+.PP
+.RS
+subvasp -m 450 -N ExtraName -h
+.RE
+.PP
+If an option line occurs multiple times for one type of submit script, then all
+are read and processed one after the other.
+.PP
+All or some of the above mentioned option files may exist and are processed in
+the reverse order.
+.PP
+Options given on the command line are processed last and may overwrite any of the
+options in the option file.
+.SH AUTHOR
+Originally was written by Reuti <reuti@staff.uni-marburg.de>. Updated by --------.
+.SH REPORTING BUGS
+Report bugs to <------@----.uni-leipzig.de>.
+.SH COPYRIGHT
+Copyright \[co] 2020 Leipzig University Chemistry.
+.br
+This  is  free  software.   You  may  redistribute  copies  of  it  under  the  terms  of  the GNU General Public License
+<http://www.gnu.org/licenses/gpl.html>.  There is NO WARRANTY, to the extent permitted by law.
+.SH "SEE ALSO"
