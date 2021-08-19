@@ -1,0 +1,98 @@
+#!/bin/bash
+#!/home/surfacechem/mondalb/opt/miniconda3/envs/anaconda3/bin/python
+
+#SBATCH --partition=test
+#SBATCH --nodes=1
+#SBATCH --ntasks=40
+#SBATCH --cpus-per-task=1   
+#SBATCH --mem-per-cpu=2500
+#SBATCH --time=1:00:00
+#SBATCH --no-requeue        
+#SBATCH --mail-type=FAIL    
+#SBATCH --array=0-39:40 
+
+
+# These are the command lines you have to use in terminal
+# N=(11.1 12.3)
+# for I in ${N[@]};do mkdir N$I;cd N$I;sbatch SqsGenerator $I;cd ../;done
+
+my_task() {
+     # Print the given "global task number" with leading zeroes
+     # followed by the hostname of the executing node.
+     K=$(printf "%03d" $1)
+     echo "$K: $HOSTNAME"
+ 
+     # Do nothing, just sleep for 3 seconds.
+     sleep 3
+}
+
+creat_initial_files(){
+py_result=$(python - <<PYTHON
+import numpy as np
+def main():
+        def Nc(N,C):
+                N_atom=np.rint(N**3 * C /100.)
+                conc = float(N_atom)/float((N**3))
+                return conc
+
+        N, C = int($1), float($2)
+        N_conc = Nc(N, C)
+        return N_conc, 1.0-N_conc, N/2
+a=main()
+print (a[0],a[1],a[2])
+PYTHON
+)
+#py_result=`python ../Ncalculation.py $1 $2`
+j=1
+for R in $py_result
+do
+        declare val$j=$R
+        ((j++))
+done
+echo -e "1. 1. 1. 90 90 90
+0\t 0.5\t 0.5
+0.5\t 0\t 0.5
+0.5\t 0.5\t 0
+0\t 0\t 0\t Ga=1.
+0.25\t 0.25\t 0.25\t As=$val2, N=$val1" > rndstr.in
+
+sc=$val3
+# sc= (Supercell_dimension) / 2
+# Because we are using conventional unitcell parameters in rndstr.in file to
+# construct the (primitive) supercell. The reason we choose this way is that
+# we can supply usual lattice parameter value directly in rndstr.in file.
+# This is also the reason why there is a factor '2' in V_min to a_min
+# conversion in EvsV.
+
+echo -e "1
+0\t $sc\t $sc
+$sc\t 0\t $sc
+$sc\t $sc\t 0" > sqscell.out
+
+echo -e "1   1" > sqsparam.in
+}
+
+
+# Every 40-task block will run on a separate node.
+date +%H:%M:%S
+echo "N$1"
+creat_initial_files 6 $1  # 6 is supercell dimension
+corrdump -l=rndstr.in -ro  -noe -nop -clus -2=3. -3=2.5 -4=1.5 -5=1. -6=1.
+pwd
+for I in $(seq 40); do
+	# This is the "global task number". Since we have an array of
+	# 320 tasks, J will range from 1 to 320.
+	J=$(($SLURM_ARRAY_TASK_ID+$I))
+	# Put each task into background, so that tasks are executed
+	# concurrently.
+	mcsqs -n=216 -rc -sd=$((3256*$J)) -ip=$I -rt=100 &
+	#my_task $I &
+	
+	# Wait a little before starting the next one.
+	sleep 1
+done
+date +%H:%M:%S
+# Wait for all child processes to terminate.
+wait
+
+exit
