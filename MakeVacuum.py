@@ -72,7 +72,7 @@ def lattice_parameter(vector,crys_str='zincblende'):
 def read_file(filename, SuperCell, S_factor, UNIT_CELL):
     print("* Reading lattice vectors from file.")
     print("*****************************************")
-    print('FILENAME\t=\t%s\nSupercell\t=\t%s'%(filename,SuperCell),'\nSupercell Dimensions\t=\t',S_factor,'\n')
+    print(f'FILENAME\t\t=\t{filename}\nSupercell\t\t=\t{SuperCell}\nSupercell Dimensions\t=\t{S_factor}\n')
     ffname = open(filename,'r')
     lines = ffname.readlines()
     system=[lines[0].rstrip()]
@@ -93,8 +93,8 @@ def read_file(filename, SuperCell, S_factor, UNIT_CELL):
     angle = np.degrees(angle)
     
     print('Cell parameters (Lattice vectors and angles):\n')
-    print('Total number of atoms (/ions) in the cell\t=\t%d\n'%N_atom)
-    print('a\t=\t%7.5f\nb\t=\t%7.5f\nc\t=\t%7.5f\n'%(vector[0],vector[1],vector[2]))
+    print(f'Total number of atoms (/ions) in the cell\t={N_atom:3d}')
+    print('a\t=\t{x1:7.5f}\nb\t=\t{x2:7.5f}\nc\t=\t{x3:7.5f}\n'.format(x1=vector[0],x2=vector[1],x3=vector[2]))
     print('alpha\t=\t%7.5f\nbeta\t=\t%7.5f\ngamma\t=\t%7.5f\n'%(angle[0],angle[1],angle[2]))
     print('Cell Volume\t=\t%8.4f\n'%C_Volm)
     
