@@ -4,7 +4,9 @@
 Created on Tue Feb 23 15:21:18 2021
 
 @author: bmondal
+@email: badal.mondal@studserv.uni-leipzig.de
 """
+
 
 import sys
 import numpy as np      
