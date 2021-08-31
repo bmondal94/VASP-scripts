@@ -67,7 +67,8 @@ if [ -f POSCAR ]; then
 		if [ -n "$MIXED" ];then
 			for I in ${ALLPOTCAR[@]};do
 				if [[ ${I%%_*} == $i ]]; then 
-					extension="_${I#*_}"
+					extension=''
+					[[ $I =~ '_' ]] && extension="_${I#*_}"
 					break 
 				fi
 			done
