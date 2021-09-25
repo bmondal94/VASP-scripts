@@ -9,7 +9,7 @@ echo "Description: This script is to compute band gap using VASP OUTCAR/EIGENVAL
 
 Syntax:  $PAGENAME [-seh] [-f FILEPATH]
 
-s	:	If spin nondegenerate use "s" as 2nd argument. (default: spin degenerate, double occupancy)	
+s	:	If spin nondegenerate. (default: spin degenerate, double occupancy)	
 e	:	If bandgap will be calculated using EIGENVAL file. (default: OUTCAR file)
 f	:	Path to OUTCAR or EIGENVAL file (excluding /OUTCAR or /EIGENVAL). (default:current directory.) 
 "
