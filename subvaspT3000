@@ -1,5 +1,6 @@
 #!/bin/bash
 #       subvasp -  VASP submit script
+# The script was originally written by Reuti from Philipps Universitat Marburg (reuti@staff.uni-marburg.de) and then updated accordingly.
 
 PGM_NAME="subvasp"
 PGM_VERSION="1.6"
