@@ -1,5 +1,5 @@
 #!/bin/bash
-#       subvasp -  VASP submit script
+#       suborca -  ORCA submit script
 
 PGM_NAME="suborca"
 PGM_VERSION="1."
