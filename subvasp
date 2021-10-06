@@ -1,5 +1,6 @@
 #!/bin/sh
 #       subvasp -  VASP submit script
+# The script was originally written by Reuti from Philipps Universitat Marburg (reuti@staff.uni-marburg.de) and then updated accordingly.
 
 if [ -z "$TaurusMyMail" ];then
 	printf "\n\e[38;5;20m===================================================================================================================\e[0m\
