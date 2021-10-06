@@ -2,7 +2,7 @@
 #       subvasp -  VASP submit script
 
 PGM_NAME="subvasp"
-PGM_VERSION="1.5"
+PGM_VERSION="1.6"
 
 if [ -L "$0" ]; then 
     SCRIPT_ROOT=$(dirname $(readlink -f "$0"))
