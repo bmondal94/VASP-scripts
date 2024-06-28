@@ -3,7 +3,7 @@
 print_usage() {
 echo "HI, $USER!"
 echo ""
-echo "THIS SCRIPT IS TO UPDATE THE INCAR FILE AND SUBMIT NEW JOB."
+echo "THIS SCRIPT IS TO CHECK CONVERGENCY OF A VASP CALCULATIONS."
 echo
 printf "Usage: $(basename "$0") [-h][-b][-o] <file-path>"
 echo
@@ -57,15 +57,20 @@ CheckFinishSinglePoint(){
 printf "++ Singlepoint Convergency check\n\n"
 for j in $file;do
 	if [ -s "$j/OUTCAR" ] ; then
-		nelmoutcar=$(awk '/NELM/ {print $3}' $j/OUTCAR | cut -d ';' -f1)
-		nelmoszicar=$(tail -n 2 $j/OSZICAR | head -n 1 | awk '{print $2}')
-		nelmdiff=$(bc<<<"$nelmoutcar-$nelmoszicar")
-		if [[ $nelmdiff -ne 0 ]];then
-			if [ $( grep -L 'Total CPU time used' $j/OUTCAR) ] ; then
-				printf "\e[38;5;213m-- Warning:\e[0m $j didn't finish.\n"
+		totalsteps=$(grep E0 $j/OSZICAR | tail -n 1 | awk '{print $1}')
+		if [[ $totalsteps -gt 1 ]]; then
+			printf "\e[38;5;213m** Warning:\e[0m $j not a single point calculation. Multiple steps found in OSZICAR.\n"
+		else	
+			nelmoutcar=$(awk '/NELM/ {print $3}' $j/OUTCAR | cut -d ';' -f1)
+			nelmoszicar=$(tail -n 2 $j/OSZICAR | head -n 1 | awk '{print $2}')
+			nelmdiff=$(bc<<<"$nelmoutcar-$nelmoszicar")
+			if [[ $nelmdiff -ne 0 ]];then
+				if [ $( grep -L 'Total CPU time used' $j/OUTCAR) ] ; then
+					printf "\e[38;5;213m-- Warning:\e[0m $j didn't finish.\n"
+				fi
+			else
+				printf "\e[38;5;213m-- Warning:\e[0m $j didn't finish properly. All the NELM step is consumed.\n"
 			fi
-		else
-			printf "\e[38;5;213m-- Warning:\e[0m $j didn't finish properly. All the NELM step is consumed.\n"
 		fi
 	else
 		printf "\e[38;5;1m** Error:\e[0m $j doesn't have OUTCAR or Empty.\n"
@@ -79,7 +84,8 @@ for j in $file;do
         if [ -s "$j/OUTCAR" ] ; then
                 if grep -q "METAGGA = MBJ" $j/OUTCAR; then
 			nelmoutcar=$(awk '/NELM/ {print $3}' $j/OUTCAR | cut -d ';' -f1)
-			nelmoszicar=$(tail -n 2 $j/OSZICAR | head -n 1 | awk '{print $2}')
+			#nelmoszicar=$(tail -n 2 $j/OSZICAR | head -n 1 | awk '{print $2}')
+			nelmoszicar=$(grep 'Iteration' $j/OUTCAR | tail -n 1 | awk '{print $4}' | cut -d ')' -f1)
 			nelmdiff=$(bc<<<"$nelmoutcar-$nelmoszicar")
 			if [[ $nelmdiff -ne 0 ]];then
                 		if [ $( grep -L 'Total CPU time used' $j/OUTCAR) ] ; then
