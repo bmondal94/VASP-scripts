@@ -8,7 +8,7 @@ parser = argparse.ArgumentParser(prog='LatticeVectors', description='This script
 parser.add_argument('filename', metavar='FILENAME', type=argparse.FileType('r'), help='The file path e.g. /home/mondal/VASP/test.vasp')
 parser.add_argument('-UC', action='store_true', default=False, help='Is the cell already a conventional unit cell? True/False (default: False)')
 parser.add_argument('-SC', action='store_true', default=False, help='Is the cell a supercell? True/False (default: False)')
-parser.add_argument('-SF', nargs='+', type=int, default=[6,6,6], help='Supercell dimensions (must be int) in a, b and c lattice vector directions respectively. (default: [6,6,6])')
+parser.add_argument('-SF', nargs='+', type=int, default=[1,1,1], help='Supercell dimensions (must be int) in a, b and c lattice vector directions respectively. (default: [1,1,1])')
 parser.add_argument('-CS', type=str, default='cubic', help='Crystal Structure e.g. cubic, zincblende, strechedzincblende etc. (default: cubic)')
 parser.add_argument('--version', action='version', version='%(prog)s 1.0')
 
@@ -41,13 +41,12 @@ Solving above 3 equations we get;
 	z**2 = yz**2 + xz**2 - xy**2
 """
 def lattice_parameter(vector,crys_str='cubic'):
-	if(crys_str == 'cubic'):
-		lp = vector
-	elif(crys_str == 'zincblende'):
-		lp = vector * np.sqrt(2)
+	lp = vector.copy()
+	if(crys_str == 'zincblende'):
+		lp *= np.sqrt(2)
 	elif(crys_str == 'strechedzincblende'): 
 		lp = np.array([0.,0.,0.])
-		nv = vector**2; factor = np.sqrt(2)
+		nv = vector.copy()**2; factor = np.sqrt(2)
 		lp[1] =  factor * np.sqrt(nv[0] + nv[1] - nv[2])
 		lp[0] =  factor * np.sqrt(nv[0] + nv[2] - nv[1])
 		lp[2] =  factor * np.sqrt(nv[1] + nv[2] - nv[0])
@@ -72,7 +71,7 @@ if __name__=="__main__":
 	filename = args.filename
 	UNIT_CELL = args.UC
 	SuperCell = args.SC
-	S_factor = np.asarray(args.SF, dtype=np.float)
+	S_factor = np.asarray(args.SF, dtype=np.float64)
 	cst = args.CS
 
 	# ********************** Read coordinate file ************************************
@@ -80,10 +79,10 @@ if __name__=="__main__":
 
 	lines = filename.readlines()
 	factor = float(lines[1].split()[0])
-	a = np.asarray(lines[2].split()).astype(np.float)
-	b = np.asarray(lines[3].split()).astype(np.float)
-	c = np.asarray(lines[4].split()).astype(np.float)
-	N_atom = np.sum(np.asarray(lines[6].split()).astype(np.int))
+	a = np.asarray(lines[2].split()).astype(np.float64)
+	b = np.asarray(lines[3].split()).astype(np.float64)
+	c = np.asarray(lines[4].split()).astype(np.float64)
+	N_atom = np.sum(np.asarray(lines[6].split()).astype(int))
 	
 	# ********************** Primitive --> Unit cell *********************************
 	vector = np.array([vec(a),vec(b),vec(c)])
